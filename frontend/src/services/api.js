@@ -1,6 +1,10 @@
+// ...existing code...
+import axios from 'axios';
+
 // Configuración base de axios
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost/dashboard_analitico/backend/api';ción base de axios
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost/dashboard_analitico/backend/api';
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost/Dashboard_analítico/backend/api';
+// Si renombraste la carpeta a 'dashboard_analitico' usa:
+// const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost/dashboard_analitico/backend/api';
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -23,99 +27,45 @@ api.interceptors.response.use(
  * Servicio de Usuarios
  */
 export const usersService = {
-  // Obtener todos los usuarios
-  getUsers: (params = {}) => {
-    return api.get('/users.php', { params });
-  },
-  
-  // Obtener usuarios activos
-  getActiveUsers: () => {
-    return api.get('/users.php', { params: { active: 'true' } });
-  },
-  
-  // Obtener usuarios por rol
-  getUsersByRole: (role) => {
-    return api.get('/users.php', { params: { role } });
-  }
+  getUsers: (params = {}) => api.get('/users.php', { params }),
+  getActiveUsers: () => api.get('/users.php', { params: { active: 'true' } }),
+  getUsersByRole: (role) => api.get('/users.php', { params: { role } }),
 };
 
 /**
  * Servicio de Ventas
  */
 export const salesService = {
-  // Obtener todas las ventas
-  getSales: (params = {}) => {
-    return api.get('/sales.php', { params });
-  },
-  
-  // Obtener ventas por período
-  getSalesByPeriod: (period) => {
-    return api.get('/sales.php', { params: { period } });
-  },
-  
-  // Obtener ventas por categoría
-  getSalesByCategory: (category) => {
-    return api.get('/sales.php', { params: { category } });
-  },
-  
-  // Obtener ventas por rango de fechas
-  getSalesByDateRange: (startDate, endDate) => {
-    return api.get('/sales.php', { 
-      params: { 
-        start_date: startDate, 
-        end_date: endDate 
-      } 
-    });
-  }
+  getSales: (params = {}) => api.get('/sales.php', { params }),
+  getSalesByPeriod: (period) => api.get('/sales.php', { params: { period } }),
+  getSalesByCategory: (category) => api.get('/sales.php', { params: { category } }),
+  getSalesByDateRange: (startDate, endDate) =>
+    api.get('/sales.php', { params: { start_date: startDate, end_date: endDate } }),
 };
 
 /**
  * Servicio de Logs
  */
 export const logsService = {
-  // Obtener todos los logs
-  getLogs: (params = {}) => {
-    return api.get('/logs.php', { params });
-  },
-  
-  // Obtener logs por acción
-  getLogsByAction: (action) => {
-    return api.get('/logs.php', { params: { action } });
-  },
-  
-  // Obtener logs por usuario
-  getLogsByUser: (userId) => {
-    return api.get('/logs.php', { params: { user_id: userId } });
-  }
+  getLogs: (params = {}) => api.get('/logs.php', { params }),
+  getLogsByAction: (action) => api.get('/logs.php', { params: { action } }),
+  getLogsByUser: (userId) => api.get('/logs.php', { params: { user_id: userId } }),
 };
 
 /**
  * Servicio de Estadísticas
  */
 export const statsService = {
-  // Obtener estadísticas generales
   getStats: (filter = 'all', startDate = null, endDate = null) => {
     const params = { filter };
     if (startDate) params.start_date = startDate;
     if (endDate) params.end_date = endDate;
-    
     return api.get('/stats.php', { params });
   },
-  
-  // Obtener estadísticas mensuales
-  getMonthlyStats: () => {
-    return api.get('/stats.php', { params: { filter: 'month' } });
-  },
-  
-  // Obtener estadísticas semanales
-  getWeeklyStats: () => {
-    return api.get('/stats.php', { params: { filter: 'week' } });
-  },
-  
-  // Obtener estadísticas diarias
-  getDailyStats: () => {
-    return api.get('/stats.php', { params: { filter: 'today' } });
-  }
+  getMonthlyStats: () => api.get('/stats.php', { params: { filter: 'month' } }),
+  getWeeklyStats: () => api.get('/stats.php', { params: { filter: 'week' } }),
+  getDailyStats: () => api.get('/stats.php', { params: { filter: 'today' } }),
 };
 
 export default api;
+// ...existing code...
