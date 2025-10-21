@@ -1,12 +1,6 @@
-/**
- * Servicio de API para el Dashboard Analítico
- * Maneja todas las llamadas al backend
- */
-
-import axios from 'axios';
-
 // Configuración base de axios
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost/backend/api';
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost/dashboard_analitico/backend/api';ción base de axios
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost/dashboard_analitico/backend/api';
 
 const api = axios.create({
   baseURL: API_BASE_URL,

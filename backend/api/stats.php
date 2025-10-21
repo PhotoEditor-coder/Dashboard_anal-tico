@@ -11,11 +11,28 @@ error_reporting(E_ALL);
 
 require_once '../config/database.php';
 
-header('Access-Control-Allow-Origin: *');
-header('Access-Control-Allow-Methods: GET, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type');
+// CORS headers mejorados
+$origin = $_SERVER['HTTP_ORIGIN'] ?? '';
+$allowedOrigins = [
+    'http://localhost:3000',
+    'http://127.0.0.1:3000',
+    'http://localhost:8080',
+    'http://127.0.0.1:8080'
+];
+
+if (in_array($origin, $allowedOrigins)) {
+    header("Access-Control-Allow-Origin: $origin");
+} else {
+    header('Access-Control-Allow-Origin: http://localhost:3000');
+}
+
+header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
+header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With');
+header('Access-Control-Allow-Credentials: true');
+header('Access-Control-Max-Age: 86400');
 
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+    http_response_code(200);
     exit(0);
 }
 
@@ -66,126 +83,83 @@ try {
     
     // Usuarios
     $users_sql = "SELECT 
-                    COUNT(*) as total_users,
-                    COUNT(CASE WHEN is_active = 1 THEN 1 END) as active_users,
-                    COUNT(CASE WHEN last_login > DATE_SUB(NOW(), INTERVAL 7 DAY) THEN 1 END) as recent_users,
-                    COUNT(CASE WHEN created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY) THEN 1 END) as new_users
+                    COUNT(*) as total_users
                   FROM users";
     
     $users_stmt = $db->prepare($users_sql);
     $users_stmt->execute();
     $general_stats['users'] = $users_stmt->fetch();
     
-    // Ventas
-    $sales_sql = "SELECT 
-                    COUNT(*) as total_sales,
-                    SUM(amount * quantity) as total_revenue,
-                    AVG(amount) as average_sale,
-                    COUNT(DISTINCT user_id) as unique_customers
-                  FROM sales
+    // Órdenes
+    $orders_sql = "SELECT 
+                    COUNT(*) as total_orders,
+                    SUM(o.total_amount) as total_revenue,
+                    AVG(o.total_amount) as average_order
+                  FROM orders o
                   WHERE 1=1 " . $date_condition;
     
-    $sales_stmt = $db->prepare($sales_sql);
+    $orders_stmt = $db->prepare($orders_sql);
     foreach ($params as $key => $value) {
-        $sales_stmt->bindValue($key, $value);
+        $orders_stmt->bindValue($key, $value);
     }
-    $sales_stmt->execute();
-    $general_stats['sales'] = $sales_stmt->fetch();
+    $orders_stmt->execute();
+    $general_stats['orders'] = $orders_stmt->fetch();
     
-    // Logs
-    $logs_sql = "SELECT 
-                    COUNT(*) as total_logs,
-                    COUNT(CASE WHEN action = 'login' THEN 1 END) as login_count,
-                    COUNT(CASE WHEN action = 'purchase' THEN 1 END) as purchase_count,
-                    COUNT(DISTINCT user_id) as active_users
-                  FROM system_logs
+    // Productos
+    $products_sql = "SELECT 
+                      COUNT(*) as total_products,
+                      COUNT(DISTINCT category) as total_categories
+                    FROM products";
+    
+    $products_stmt = $db->prepare($products_sql);
+    $products_stmt->execute();
+    $general_stats['products'] = $products_stmt->fetch();
+    
+    // Eventos
+    $events_sql = "SELECT 
+                    COUNT(*) as total_events,
+                    COUNT(DISTINCT event_type) as event_types
+                  FROM event_logs
                   WHERE 1=1 " . $date_condition;
     
-    $logs_stmt = $db->prepare($logs_sql);
+    $events_stmt = $db->prepare($events_sql);
     foreach ($params as $key => $value) {
-        $logs_stmt->bindValue($key, $value);
+        $events_stmt->bindValue($key, $value);
     }
-    $logs_stmt->execute();
-    $general_stats['activity'] = $logs_stmt->fetch();
-    
-    // Adopciones
-    $adoptions_sql = "SELECT 
-                        COUNT(*) as total_adoptions,
-                        COUNT(CASE WHEN status = 'completed' THEN 1 END) as completed_adoptions,
-                        COUNT(CASE WHEN status = 'pending' THEN 1 END) as pending_adoptions,
-                        COUNT(CASE WHEN pet_type = 'Perro' THEN 1 END) as dog_adoptions,
-                        COUNT(CASE WHEN pet_type = 'Gato' THEN 1 END) as cat_adoptions
-                      FROM adoptions
-                      WHERE 1=1 " . $date_condition;
-    
-    $adoptions_stmt = $db->prepare($adoptions_sql);
-    foreach ($params as $key => $value) {
-        $adoptions_stmt->bindValue($key, $value);
-    }
-    $adoptions_stmt->execute();
-    $general_stats['adoptions'] = $adoptions_stmt->fetch();
+    $events_stmt->execute();
+    $general_stats['activity'] = $events_stmt->fetch();
     
     // Datos para gráficos
     $charts_data = [];
     
-    // Ventas por mes (últimos 12 meses)
-    $monthly_sales_sql = "SELECT 
-                            DATE_FORMAT(sale_date, '%Y-%m') as month,
-                            COUNT(*) as sales_count,
-                            SUM(amount * quantity) as revenue
-                          FROM sales
-                          WHERE sale_date >= DATE_SUB(NOW(), INTERVAL 12 MONTH)
-                          GROUP BY DATE_FORMAT(sale_date, '%Y-%m')
+    // Ventas por mes
+    $monthly_orders_sql = "SELECT 
+                            DATE_FORMAT(created_at, '%Y-%m') as month,
+                            COUNT(*) as order_count,
+                            SUM(total_amount) as revenue
+                          FROM orders
+                          WHERE created_at >= DATE_SUB(NOW(), INTERVAL 12 MONTH)
+                          GROUP BY DATE_FORMAT(created_at, '%Y-%m')
                           ORDER BY month";
     
-    $monthly_sales_stmt = $db->prepare($monthly_sales_sql);
-    $monthly_sales_stmt->execute();
-    $charts_data['monthly_sales'] = $monthly_sales_stmt->fetchAll();
+    $monthly_orders_stmt = $db->prepare($monthly_orders_sql);
+    $monthly_orders_stmt->execute();
+    $charts_data['monthly_orders'] = $monthly_orders_stmt->fetchAll();
     
-    // Usuarios activos por día (últimos 30 días)
-    $daily_users_sql = "SELECT 
-                          DATE(created_at) as date,
-                          COUNT(DISTINCT user_id) as active_users
-                        FROM system_logs
-                        WHERE created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
-                        GROUP BY DATE(created_at)
-                        ORDER BY date";
+    // Productos más vendidos
+    $top_products_sql = "SELECT 
+                          p.name,
+                          SUM(oi.quantity) as units_sold,
+                          SUM(oi.quantity * oi.price) as revenue
+                        FROM order_items oi
+                        JOIN products p ON p.id = oi.product_id
+                        GROUP BY p.id, p.name
+                        ORDER BY units_sold DESC
+                        LIMIT 10";
     
-    $daily_users_stmt = $db->prepare($daily_users_sql);
-    $daily_users_stmt->execute();
-    $charts_data['daily_users'] = $daily_users_stmt->fetchAll();
-    
-    // Ventas por categoría
-    $category_sales_sql = "SELECT 
-                            category,
-                            COUNT(*) as sales_count,
-                            SUM(amount * quantity) as revenue
-                          FROM sales
-                          WHERE 1=1 " . $date_condition . "
-                          GROUP BY category
-                          ORDER BY revenue DESC";
-    
-    $category_sales_stmt = $db->prepare($category_sales_sql);
-    foreach ($params as $key => $value) {
-        $category_sales_stmt->bindValue($key, $value);
-    }
-    $category_sales_stmt->execute();
-    $charts_data['category_sales'] = $category_sales_stmt->fetchAll();
-    
-    // Adopciones por tipo
-    $adoption_types_sql = "SELECT 
-                            pet_type,
-                            COUNT(*) as adoption_count
-                          FROM adoptions
-                          WHERE 1=1 " . $date_condition . "
-                          GROUP BY pet_type";
-    
-    $adoption_types_stmt = $db->prepare($adoption_types_sql);
-    foreach ($params as $key => $value) {
-        $adoption_types_stmt->bindValue($key, $value);
-    }
-    $adoption_types_stmt->execute();
-    $charts_data['adoption_types'] = $adoption_types_stmt->fetchAll();
+    $top_products_stmt = $db->prepare($top_products_sql);
+    $top_products_stmt->execute();
+    $charts_data['top_products'] = $top_products_stmt->fetchAll();
     
     $response = [
         'filter' => $filter,
