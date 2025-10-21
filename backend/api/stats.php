@@ -4,6 +4,9 @@
  * GET /api/stats.php?filter=month|week|today|year|custom&start_date=YYYY-MM-DD&end_date=YYYY-MM-DD
  */
 
+
+
+
 ini_set('display_errors', 1);
 ini_set('display_startup_errors', 1);
 error_reporting(E_ALL);
@@ -56,6 +59,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
 
 // ---------- DB ----------
 require_once __DIR__ . '/../config/database.php';
+require_once __DIR__ . '/../config/utils.php';
 try {
     $database = new Database();
     $db = $database->getConnection();
