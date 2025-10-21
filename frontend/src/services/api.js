@@ -1,60 +1,65 @@
-// ...existing code...
+// src/services/api.js
 import axios from 'axios';
 
-// Configuración base de axios
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost/Dashboard_analítico/backend/api';
-// Si renombraste la carpeta a 'dashboard_analitico' usa:
-// const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost/dashboard_analitico/backend/api';
+// 1) Usa env o fallback SIN acentos
+const API_BASE_URL =
+  process.env.REACT_APP_API_URL ||
+  'http://localhost/dashboard_analitico/backend/api';
 
 const api = axios.create({
   baseURL: API_BASE_URL,
   timeout: 10000,
-  headers: {
-    'Content-Type': 'application/json',
-  },
+  headers: { 'Content-Type': 'application/json' },
+  // Si usas sesión PHP
+  // withCredentials: true,
 });
 
-// Interceptor para manejar errores
+// Interceptor de respuesta (log claro de 500/CORS/Network)
 api.interceptors.response.use(
-  (response) => response,
+  (res) => res,
   (error) => {
-    console.error('API Error:', error);
+    if (error.response) {
+      // El servidor respondió (p.ej. 500/404)
+      console.error('API Error:', {
+        url: error.config?.url,
+        status: error.response.status,
+        data: error.response.data,
+      });
+    } else if (error.request) {
+      // No hubo respuesta (CORS, servidor caído, URL mal)
+      console.error('API Error: no response from server', {
+        url: error.config?.url,
+        baseURL: error.config?.baseURL,
+      });
+    } else {
+      console.error('API Error: setup', error.message);
+    }
     return Promise.reject(error);
   }
 );
 
-/**
- * Servicio de Usuarios
- */
+/** Servicios */
 export const usersService = {
   getUsers: (params = {}) => api.get('/users.php', { params }),
   getActiveUsers: () => api.get('/users.php', { params: { active: 'true' } }),
   getUsersByRole: (role) => api.get('/users.php', { params: { role } }),
 };
 
-/**
- * Servicio de Ventas
- */
 export const salesService = {
   getSales: (params = {}) => api.get('/sales.php', { params }),
   getSalesByPeriod: (period) => api.get('/sales.php', { params: { period } }),
-  getSalesByCategory: (category) => api.get('/sales.php', { params: { category } }),
+  getSalesByCategory: (category) =>
+    api.get('/sales.php', { params: { category } }),
   getSalesByDateRange: (startDate, endDate) =>
     api.get('/sales.php', { params: { start_date: startDate, end_date: endDate } }),
 };
 
-/**
- * Servicio de Logs
- */
 export const logsService = {
   getLogs: (params = {}) => api.get('/logs.php', { params }),
   getLogsByAction: (action) => api.get('/logs.php', { params: { action } }),
   getLogsByUser: (userId) => api.get('/logs.php', { params: { user_id: userId } }),
 };
 
-/**
- * Servicio de Estadísticas
- */
 export const statsService = {
   getStats: (filter = 'all', startDate = null, endDate = null) => {
     const params = { filter };
@@ -68,4 +73,3 @@ export const statsService = {
 };
 
 export default api;
-// ...existing code...
