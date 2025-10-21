@@ -203,4 +203,7 @@ try {
 } catch (Exception $e) {
     handleError('Error interno del servidor: ' . $e->getMessage(), 500);
 }
+
+// Si la columna debería ser diferente, ajusta el nombre en la consulta
+$query = "SELECT * FROM users WHERE active = 1"; // Ejemplo de consulta corregida
 ?>
