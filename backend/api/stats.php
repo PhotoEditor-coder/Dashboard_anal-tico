@@ -2,12 +2,12 @@
 // backend/api/stats.php
 require_once __DIR__ . '/bootstrap.php';
 
-// period puede ser: week, month, year
 $period = $_GET['period'] ?? 'month';
 
 try {
+
     // -----------------------------------
-    // 1) Rango de fechas para los gráficos
+    // 1) Rango de fechas dinámico
     // -----------------------------------
     switch ($period) {
         case 'week':
@@ -24,10 +24,8 @@ try {
     }
 
     // -----------------------------------
-    // 2) KPIs generales (totales)
+    // 2) KPI: Total Revenue
     // -----------------------------------
-
-    // Total de ingresos (solo órdenes completadas)
     $stmt = $db->query("
         SELECT IFNULL(SUM(total_amount), 0) AS total_revenue
         FROM orders
@@ -35,7 +33,9 @@ try {
     ");
     $totalRevenue = (float) $stmt->fetch()['total_revenue'];
 
-    // Número total de pedidos completados
+    // -----------------------------------
+    // 3) KPI: Total Orders (completed)
+    // -----------------------------------
     $stmt = $db->query("
         SELECT COUNT(*) AS total_orders
         FROM orders
@@ -43,11 +43,15 @@ try {
     ");
     $totalOrders = (int) $stmt->fetch()['total_orders'];
 
-    // Total de usuarios
+    // -----------------------------------
+    // 4) KPI: Total Users
+    // -----------------------------------
     $stmt = $db->query("SELECT COUNT(*) AS total_users FROM users");
     $totalUsers = (int) $stmt->fetch()['total_users'];
 
-    // Usuarios activos último mes (login en últimos 30 días)
+    // -----------------------------------
+    // 5) KPI: Active users (last 30 days)
+    // -----------------------------------
     $stmt = $db->query("
         SELECT COUNT(*) AS active_users
         FROM users
@@ -56,7 +60,7 @@ try {
     $activeUsers = (int) $stmt->fetch()['active_users'];
 
     // -----------------------------------
-    // 3) Gráfico: ingresos por día (último periodo)
+    // 6) CHART: Revenue by day
     // -----------------------------------
     $stmt = $db->query("
         SELECT DATE(created_at) AS date, SUM(total_amount) AS revenue
@@ -69,7 +73,7 @@ try {
     $revenueByDay = $stmt->fetchAll();
 
     // -----------------------------------
-    // 4) Gráfico: top productos por ingresos (total histórico)
+    // 7) CHART: Top products by revenue
     // -----------------------------------
     $stmt = $db->query("
         SELECT p.name,
@@ -85,7 +89,7 @@ try {
     $topProducts = $stmt->fetchAll();
 
     // -----------------------------------
-    // 5) Gráfico: eventos por tipo (histórico)
+    // 8) CHART: Events by type
     // -----------------------------------
     $stmt = $db->query("
         SELECT type, COUNT(*) AS total
@@ -95,7 +99,7 @@ try {
     $eventStats = $stmt->fetchAll();
 
     // -----------------------------------
-    // 6) Respuesta estructurada para el frontend
+    // 9) Respuesta final para React
     // -----------------------------------
     respond([
         'kpis' => [
@@ -105,18 +109,20 @@ try {
             'activeUsers'  => $activeUsers,
         ],
         'charts' => [
-            'revenueByDay' => $revenueByDay,   // para SalesChart
-            'topProducts'  => $topProducts,    // para ActivityChart
-            'eventsByType' => $eventStats,     // para UsersChart
+            'revenueByDay' => $revenueByDay,
+            'topProducts'  => $topProducts,
+            'eventsByType' => $eventStats,
         ],
         'meta' => [
-            'period'       => $period,
+            'period' => $period,
             'generated_at' => date('c'),
         ]
     ]);
 
 } catch (Throwable $e) {
-    // Si quieres depurar puedes loguear el error:
-    // error_log($e->getMessage());
-    respond('Internal server error', 500);
+    respond([
+        'success' => false,
+        'error' => 'Internal server error',
+        'details' => $e->getMessage()
+    ], 500);
 }
