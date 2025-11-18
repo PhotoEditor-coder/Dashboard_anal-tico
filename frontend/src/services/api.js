@@ -1,4 +1,3 @@
-// frontend/src/services/api.js
 import axios from "axios";
 
 const api = axios.create({
@@ -7,13 +6,13 @@ const api = axios.create({
     "http://localhost/dashboard_analitico/backend/api",
 });
 
-export const fetchStats = async () => {
-  const response = await api.get("/stats.php");
-  // response.data = { success, data, error }
+export const fetchStats = async (period = "month") => {
+  const response = await api.get("/stats.php", { params: { period } });
   if (!response.data.success) {
     throw new Error(response.data.error || "Error en la API");
   }
-  return response.data.data; // <- aquí devolvemos directamente {kpis, charts, meta}
+  // devolvemos solo la parte útil para el Dashboard
+  return response.data.data; // { kpis, charts, meta }
 };
 
 export default api;
