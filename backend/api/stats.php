@@ -2,10 +2,31 @@
 // backend/api/stats.php
 require_once __DIR__ . '/bootstrap.php';
 
-$range = $_GET['range'] ?? 'last_90_days';
+// period puede ser: week, month, year
+$period = $_GET['period'] ?? 'month';
 
 try {
-    // 1) KPIs generales
+    // -----------------------------------
+    // 1) Rango de fechas para los gráficos
+    // -----------------------------------
+    switch ($period) {
+        case 'week':
+            $interval = '7 DAY';
+            break;
+        case 'year':
+            $interval = '365 DAY';
+            break;
+        case 'month':
+        default:
+            $interval = '30 DAY';
+            $period = 'month';
+            break;
+    }
+
+    // -----------------------------------
+    // 2) KPIs generales (totales)
+    // -----------------------------------
+
     // Total de ingresos (solo órdenes completadas)
     $stmt = $db->query("
         SELECT IFNULL(SUM(total_amount), 0) AS total_revenue
@@ -34,18 +55,22 @@ try {
     ");
     $activeUsers = (int) $stmt->fetch()['active_users'];
 
-    // 2) Ingresos por día (últimos 90 días)
+    // -----------------------------------
+    // 3) Gráfico: ingresos por día (último periodo)
+    // -----------------------------------
     $stmt = $db->query("
         SELECT DATE(created_at) AS date, SUM(total_amount) AS revenue
         FROM orders
         WHERE status = 'completed'
-          AND created_at >= DATE_SUB(CURDATE(), INTERVAL 90 DAY)
+          AND created_at >= DATE_SUB(CURDATE(), INTERVAL $interval)
         GROUP BY DATE(created_at)
         ORDER BY DATE(created_at)
     ");
     $revenueByDay = $stmt->fetchAll();
 
-    // 3) Top productos por ingresos
+    // -----------------------------------
+    // 4) Gráfico: top productos por ingresos (total histórico)
+    // -----------------------------------
     $stmt = $db->query("
         SELECT p.name,
                SUM(oi.quantity * oi.unit_price) AS total_revenue
@@ -59,7 +84,9 @@ try {
     ");
     $topProducts = $stmt->fetchAll();
 
-    // 4) Eventos por tipo (signup, login, purchase, page_view)
+    // -----------------------------------
+    // 5) Gráfico: eventos por tipo (histórico)
+    // -----------------------------------
     $stmt = $db->query("
         SELECT type, COUNT(*) AS total
         FROM event_logs
@@ -67,6 +94,9 @@ try {
     ");
     $eventStats = $stmt->fetchAll();
 
+    // -----------------------------------
+    // 6) Respuesta estructurada para el frontend
+    // -----------------------------------
     respond([
         'kpis' => [
             'totalRevenue' => $totalRevenue,
@@ -75,16 +105,18 @@ try {
             'activeUsers'  => $activeUsers,
         ],
         'charts' => [
-            'revenueByDay' => $revenueByDay,
-            'topProducts'  => $topProducts,
-            'eventsByType' => $eventStats,
+            'revenueByDay' => $revenueByDay,   // para SalesChart
+            'topProducts'  => $topProducts,    // para ActivityChart
+            'eventsByType' => $eventStats,     // para UsersChart
         ],
         'meta' => [
-            'range' => $range,
+            'period'       => $period,
             'generated_at' => date('c'),
         ]
     ]);
 
 } catch (Throwable $e) {
+    // Si quieres depurar puedes loguear el error:
+    // error_log($e->getMessage());
     respond('Internal server error', 500);
 }
