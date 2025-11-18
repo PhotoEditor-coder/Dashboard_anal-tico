@@ -1,188 +1,159 @@
 <?php
-/**
- * API Endpoint: Ventas
- * GET /api/sales - Lista todas las ventas
- * GET /api/sales?period=monthly - Ventas por período
- * GET /api/sales?category=subscription - Filtrar por categoría
- */
+// backend/api/sales.php
+// Lista de ventas basada en orders + order_items + products
 
-require_once '../config/database.php';
-
-// CORS headers mejorados
-$origin = $_SERVER['HTTP_ORIGIN'] ?? '';
-$allowedOrigins = [
-    'http://localhost:3000',
-    'http://127.0.0.1:3000',
-    'http://localhost:8080',
-    'http://127.0.0.1:8080'
-];
-
-if (in_array($origin, $allowedOrigins)) {
-    header("Access-Control-Allow-Origin: $origin");
-} else {
-    header('Access-Control-Allow-Origin: http://localhost:3000');
-}
-
-header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With');
-header('Access-Control-Allow-Credentials: true');
-header('Access-Control-Max-Age: 86400');
-
-if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
-    http_response_code(200);
-    exit(0);
-}
+require_once __DIR__ . '/bootstrap.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
-    handleError('Método no permitido', 405);
+    respond('Método no permitido', 405);
 }
 
+// Parámetros de consulta
+$period     = $_GET['period']      ?? null;      // today | week | month | year
+$startDate  = $_GET['start_date']  ?? null;
+$endDate    = $_GET['end_date']    ?? null;
+$limit      = isset($_GET['limit']) ? (int) $_GET['limit'] : 100;
+
 try {
-    $database = new Database();
-    $db = $database->getConnection();
-    
-    if (!$db) {
-        handleError('Error de conexión a la base de datos', 500);
-    }
-    
-    // Parámetros de consulta
-    $period = isset($_GET['period']) ? $_GET['period'] : null;
-    $category = isset($_GET['category']) ? $_GET['category'] : null;
-    $start_date = isset($_GET['start_date']) ? $_GET['start_date'] : null;
-    $end_date = isset($_GET['end_date']) ? $_GET['end_date'] : null;
-    $limit = isset($_GET['limit']) ? (int)$_GET['limit'] : 100;
-    
-    // Construir consulta base
-    $sql = "SELECT 
-                s.id,
-                s.product_name,
-                s.amount,
-                s.quantity,
-                s.category,
-                s.sale_date,
-                u.name as user_name,
-                u.email as user_email,
-                (s.amount * s.quantity) as total_amount
-            FROM sales s
-            LEFT JOIN users u ON s.user_id = u.id";
-    
     $conditions = [];
-    $params = [];
-    
-    // Filtro por categoría
-    if ($category) {
-        $conditions[] = "s.category = :category";
-        $params[':category'] = $category;
+    $params     = [];
+
+    // Filtro por fechas manual (rango)
+    if ($startDate) {
+        $conditions[]          = "o.created_at >= :start_date";
+        $params[':start_date'] = $startDate;
     }
-    
-    // Filtro por fechas
-    if ($start_date) {
-        $conditions[] = "s.sale_date >= :start_date";
-        $params[':start_date'] = $start_date;
+
+    if ($endDate) {
+        $conditions[]        = "o.created_at <= :end_date";
+        $params[':end_date'] = $endDate . ' 23:59:59';
     }
-    
-    if ($end_date) {
-        $conditions[] = "s.sale_date <= :end_date";
-        $params[':end_date'] = $end_date . ' 23:59:59';
-    }
-    
-    // Filtro por período
+
+    // Filtro por período relativo
     if ($period) {
         switch ($period) {
             case 'today':
-                $conditions[] = "DATE(s.sale_date) = CURDATE()";
+                $conditions[] = "DATE(o.created_at) = CURDATE()";
                 break;
             case 'week':
-                $conditions[] = "s.sale_date >= DATE_SUB(NOW(), INTERVAL 7 DAY)";
+                $conditions[] = "o.created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)";
                 break;
             case 'month':
-                $conditions[] = "s.sale_date >= DATE_SUB(NOW(), INTERVAL 30 DAY)";
+                $conditions[] = "o.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)";
                 break;
             case 'year':
-                $conditions[] = "s.sale_date >= DATE_SUB(NOW(), INTERVAL 365 DAY)";
+                $conditions[] = "o.created_at >= DATE_SUB(NOW(), INTERVAL 365 DAY)";
                 break;
         }
     }
-    
+
+    $whereSql = '';
     if (!empty($conditions)) {
-        $sql .= " WHERE " . implode(' AND ', $conditions);
+        $whereSql = ' WHERE ' . implode(' AND ', $conditions);
     }
-    
-    $sql .= " ORDER BY s.sale_date DESC LIMIT :limit";
-    $params[':limit'] = $limit;
-    
+
+    // -------------------------------------
+    // 1) Listado de ventas (por order_items)
+    // -------------------------------------
+    $sql = "
+        SELECT
+            oi.id AS id,
+            p.name AS product_name,
+            oi.unit_price AS amount,
+            oi.quantity,
+            'artwork' AS category, -- categoría dummy, puedes cambiarla si luego añades campo real
+            o.created_at AS sale_date,
+            u.id AS user_id,
+            u.email AS user_email,
+            (oi.unit_price * oi.quantity) AS total_amount
+        FROM order_items oi
+        JOIN orders o   ON o.id = oi.order_id
+        JOIN products p ON p.id = oi.product_id
+        LEFT JOIN users u ON u.id = o.user_id
+        $whereSql
+        ORDER BY o.created_at DESC
+        LIMIT :limit
+    ";
+
     $stmt = $db->prepare($sql);
-    
+
+    // Vincular parámetros (menos el LIMIT)
     foreach ($params as $key => $value) {
-        if ($key === ':limit') {
-            $stmt->bindValue($key, $value, PDO::PARAM_INT);
-        } else {
-            $stmt->bindValue($key, $value);
-        }
+        $stmt->bindValue($key, $value);
     }
-    
+    $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+
     $stmt->execute();
     $sales = $stmt->fetchAll();
-    
-    // Estadísticas de ventas
-    $stats_sql = "SELECT 
-                    COUNT(*) as total_sales,
-                    SUM(amount * quantity) as total_revenue,
-                    AVG(amount) as average_sale,
-                    COUNT(DISTINCT user_id) as unique_customers,
-                    COUNT(CASE WHEN category = 'subscription' THEN 1 END) as subscription_sales,
-                    COUNT(CASE WHEN category = 'addon' THEN 1 END) as addon_sales
-                  FROM sales";
-    
-    if (!empty($conditions)) {
-        $stats_sql .= " WHERE " . implode(' AND ', $conditions);
-    }
-    
-    $stats_stmt = $db->prepare($stats_sql);
+
+    // -------------------------------------
+    // 2) Estadísticas globales de ventas
+    // -------------------------------------
+    $statsSql = "
+        SELECT
+            COUNT(*) AS total_sales,
+            IFNULL(SUM(oi.unit_price * oi.quantity), 0) AS total_revenue,
+            IFNULL(AVG(oi.unit_price * oi.quantity), 0) AS average_sale,
+            COUNT(DISTINCT o.user_id) AS unique_customers
+        FROM order_items oi
+        JOIN orders o ON o.id = oi.order_id
+        $whereSql
+    ";
+
+    $statsStmt = $db->prepare($statsSql);
     foreach ($params as $key => $value) {
-        if ($key !== ':limit') {
-            $stats_stmt->bindValue($key, $value);
-        }
+        $statsStmt->bindValue($key, $value);
     }
-    $stats_stmt->execute();
-    $stats = $stats_stmt->fetch();
-    
-    // Ventas por mes (para gráficos)
-    $monthly_sql = "SELECT 
-                      DATE_FORMAT(sale_date, '%Y-%m') as month,
-                      COUNT(*) as sales_count,
-                      SUM(amount * quantity) as revenue
-                    FROM sales";
-    
-    if (!empty($conditions)) {
-        $monthly_sql .= " WHERE " . implode(' AND ', $conditions);
-    }
-    
-    $monthly_sql .= " GROUP BY DATE_FORMAT(sale_date, '%Y-%m') 
-                      ORDER BY month DESC LIMIT 12";
-    
-    $monthly_stmt = $db->prepare($monthly_sql);
+    $statsStmt->execute();
+    $stats = $statsStmt->fetch() ?: [
+        'total_sales'      => 0,
+        'total_revenue'    => 0,
+        'average_sale'     => 0,
+        'unique_customers' => 0,
+    ];
+
+    // Campos que tenías en el código original pero que aquí no aplican
+    $stats['subscription_sales'] = 0;
+    $stats['addon_sales']        = 0;
+
+    // -------------------------------------
+    // 3) Ventas por mes (para gráficos)
+    // -------------------------------------
+    $monthlySql = "
+        SELECT
+            DATE_FORMAT(o.created_at, '%Y-%m') AS month,
+            COUNT(*) AS sales_count,
+            IFNULL(SUM(oi.unit_price * oi.quantity), 0) AS revenue
+        FROM order_items oi
+        JOIN orders o ON o.id = oi.order_id
+        $whereSql
+        GROUP BY DATE_FORMAT(o.created_at, '%Y-%m')
+        ORDER BY month DESC
+        LIMIT 12
+    ";
+
+    $monthlyStmt = $db->prepare($monthlySql);
     foreach ($params as $key => $value) {
-        if ($key !== ':limit') {
-            $monthly_stmt->bindValue($key, $value);
-        }
+        $monthlyStmt->bindValue($key, $value);
     }
-    $monthly_stmt->execute();
-    $monthly_data = $monthly_stmt->fetchAll();
-    
-    $response = [
+    $monthlyStmt->execute();
+    $monthlyData = $monthlyStmt->fetchAll();
+
+    // -------------------------------------
+    // 4) Respuesta final
+    // -------------------------------------
+    respond([
         'sales' => $sales,
         'pagination' => [
             'limit' => $limit,
-            'total' => count($sales)
+            'total' => count($sales),
         ],
-        'statistics' => $stats,
-        'monthly_data' => $monthly_data
-    ];
-    
-    sendResponse($response);
-    
-} catch (Exception $e) {
-    handleError('Error interno del servidor: ' . $e->getMessage(), 500);
+        'statistics'   => $stats,
+        'monthly_data' => $monthlyData,
+    ]);
+
+} catch (Throwable $e) {
+    // Si quieres loguear:
+    // error_log($e->getMessage());
+    respond('Error interno del servidor', 500);
 }
-?>
