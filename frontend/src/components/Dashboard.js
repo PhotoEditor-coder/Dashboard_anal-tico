@@ -1,228 +1,162 @@
-import React, { useState, useEffect } from "react";
-import { fetchStats } from "../services/api"; // usamos este de verdad
-import StatsCard from "./StatsCard";
-import SalesChart from "./SalesChart";
-import UsersChart from "./UsersChart";
-import AdoptionsChart from "./AdoptionsChart";
-import ActivityChart from "./ActivityChart";
-import Filters from "./Filters";
+// frontend/src/components/Dashboard.js
+import React, { useState, useEffect, useCallback } from 'react';
+import { fetchStats }        from '../services/api';
+import { SkeletonDashboard } from './Skeleton';
+import StatsCard             from './StatsCard';
+import SalesChart            from './SalesChart';
+import UsersChart            from './UsersChart';
+import ActivityChart         from './ActivityChart';
+import AdoptionsChart        from './AdoptionsChart';
+import Filters               from './Filters';
 
 const Dashboard = () => {
-  const [stats, setStats] = useState(null);
+  const [data,    setData]    = useState(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [filters, setFilters] = useState({
-    period: "month",
-    startDate: "",
-    endDate: "",
-  });
+  const [error,   setError]   = useState(null);
+  const [filters, setFilters] = useState({ period: 'month' });
 
-  // 👇 función interna con otro nombre para no chocar con el import
-  const loadStats = async () => {
+  const loadStats = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
-
-      // 🔹 OPCIÓN 1: si tu fetchStats acepta filtros como parámetros
-      const response = await fetchStats(
-        filters.period,
-        filters.startDate || null,
-        filters.endDate || null
-      );
-
-      // 🔹 OPCIÓN 2: si tu fetchStats NO acepta filtros y solo hace GET simple
-      // const response = await fetchStats();
-
-      // 👇 Ajusta según lo que devuelva tu API:
-      // - si fetchStats devuelve response (axios): response.data.data
-      // - si fetchStats devuelve ya data: response.data
-      setStats(response.data?.data || response.data || response);
+      const result = await fetchStats(filters.period);
+      setData(result);
     } catch (err) {
-      console.error("Error fetching stats:", err);
-      setError("Error al cargar los datos del dashboard");
+      setError(err.message || 'Error al cargar el dashboard');
     } finally {
       setLoading(false);
     }
-  };
+  }, [filters.period]);
 
-  useEffect(() => {
-    loadStats();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filters]);
+  useEffect(() => { loadStats(); }, [loadStats]);
 
-  const handleFilterChange = (newFilters) => {
-    setFilters((prev) => ({ ...prev, ...newFilters }));
-  };
+  const handleFilterChange = (newFilters) =>
+    setFilters(prev => ({ ...prev, ...newFilters }));
 
-  if (loading) {
-    return (
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "center",
-          alignItems: "center",
-          minHeight: "400px",
-        }}
-      >
-        <div className="spinner"></div>
-      </div>
-    );
-  }
+  const fmt    = (v)  => v >= 0 ? `+${v}%` : `${v}%`;
+  const ctype  = (v)  => v == null ? 'neutral' : v >= 0 ? 'positive' : 'negative';
 
-  if (error) {
-    return (
-      <div className="error-message">
-        <h3>Error al cargar el dashboard</h3>
-        <p>{error}</p>
-        <button
-          onClick={loadStats}
-          style={{
-            background: "#667eea",
-            color: "white",
-            border: "none",
-            padding: "0.5rem 1rem",
-            borderRadius: "0.5rem",
-            cursor: "pointer",
-            marginTop: "1rem",
-          }}
-        >
-          Reintentar
-        </button>
-      </div>
-    );
-  }
+  // ── Skeleton mientras carga ──────────────────────────────────
+  if (loading) return <SkeletonDashboard />;
 
-  if (!stats) {
-    return (
-      <div style={{ textAlign: "center", padding: "2rem" }}>
-        <h3>No hay datos disponibles</h3>
-        <p>No se pudieron cargar las estadísticas del dashboard.</p>
-      </div>
-    );
-  }
+  // ── Error ────────────────────────────────────────────────────
+  if (error) return (
+    <div className="error-message">
+      <h3>Error al cargar el dashboard</h3>
+      <p>{error}</p>
+      <button onClick={loadStats} className="btn-primary" style={{ marginTop: '1rem' }}>
+        Reintentar
+      </button>
+    </div>
+  );
+
+  if (!data) return null;
+
+  const { kpis = {}, charts = {} } = data;
 
   return (
     <div>
-      <div style={{ marginBottom: "2rem" }}>
-        <h2
-          style={{
-            fontSize: "1.875rem",
-            fontWeight: "700",
-            color: "#1e293b",
-            marginBottom: "0.5rem",
-          }}
-        >
-          Dashboard Analítico
-        </h2>
-        <p style={{ color: "#64748b", fontSize: "1.125rem" }}>
-          Análisis completo de usuarios, ventas y actividad del sistema
-        </p>
+      <div className="page-header">
+        <h2>Dashboard Analítico</h2>
+        <p>Análisis completo de usuarios, ventas y actividad del sistema</p>
       </div>
 
       <Filters filters={filters} onFilterChange={handleFilterChange} />
 
-      {/* Cards de estadísticas */}
+      {/* ── KPIs ──────────────────────────────────────────────── */}
       <div className="dashboard-grid">
         <StatsCard
-          title="Total Usuarios"
-          value={stats.statistics?.users?.total_users || 0}
-          change="+12%"
-          changeType="positive"
-          icon="👥"
-          color="#3b82f6"
+          title="Ingresos Totales"
+          value={`$${(kpis.totalRevenue ?? 0).toLocaleString('es-ES')}`}
+          change={kpis.changes?.revenue != null ? fmt(kpis.changes.revenue) : null}
+          changeType={ctype(kpis.changes?.revenue)}
+          icon="💰"
+          color="var(--amber)"
         />
-
+        <StatsCard
+          title="Pedidos"
+          value={kpis.totalOrders ?? 0}
+          change={kpis.changes?.orders != null ? fmt(kpis.changes.orders) : null}
+          changeType={ctype(kpis.changes?.orders)}
+          icon="🛒"
+          color="var(--green)"
+        />
+        <StatsCard
+          title="Total Usuarios"
+          value={kpis.totalUsers ?? 0}
+          change={null}
+          icon="👥"
+          color="var(--blue)"
+        />
         <StatsCard
           title="Usuarios Activos"
-          value={stats.statistics?.users?.active_users || 0}
-          change="+8%"
-          changeType="positive"
+          value={kpis.activeUsers ?? 0}
+          change={kpis.changes?.activeUsers != null ? fmt(kpis.changes.activeUsers) : null}
+          changeType={ctype(kpis.changes?.activeUsers)}
           icon="✅"
-          color="#10b981"
-        />
-
-        <StatsCard
-          title="Ventas Totales"
-          value={`${
-            stats.statistics?.sales?.total_revenue?.toLocaleString() || 0
-          }`}
-          change="+23%"
-          changeType="positive"
-          icon="💰"
-          color="#f59e0b"
-        />
-
-        <StatsCard
-          title="Adopciones"
-          value={stats.statistics?.adoptions?.total_adoptions || 0}
-          change="+15%"
-          changeType="positive"
-          icon="🐕"
-          color="#8b5cf6"
+          color="var(--purple)"
         />
       </div>
 
-      {/* Gráficos */}
-      <div className="dashboard-grid" style={{ marginTop: "2rem" }}>
+      {/* ── Gráficos fila 1 ───────────────────────────────────── */}
+      <div className="dashboard-grid" style={{ marginTop: '1.25rem' }}>
         <div className="card">
           <div className="card-header">
             <h3 className="card-title">Ventas Mensuales</h3>
-            <div
-              className="card-icon"
-              style={{ background: "#fef3c7", color: "#f59e0b" }}
-            >
-              📈
-            </div>
+            <div className="card-icon" style={{ background: 'var(--amber-bg)', color: 'var(--amber)' }}>📈</div>
           </div>
           <div className="chart-container">
-            <SalesChart data={stats.charts_data?.monthly_sales || []} />
+            <SalesChart data={charts.monthlySales ?? []} />
           </div>
         </div>
 
         <div className="card">
           <div className="card-header">
-            <h3 className="card-title">Usuarios Activos</h3>
-            <div
-              className="card-icon"
-              style={{ background: "#dbeafe", color: "#3b82f6" }}
-            >
-              👤
-            </div>
+            <h3 className="card-title">Ingresos por Día</h3>
+            <div className="card-icon" style={{ background: 'var(--blue-bg)', color: 'var(--blue)' }}>📊</div>
           </div>
           <div className="chart-container">
-            <UsersChart data={stats.charts_data?.daily_users || []} />
+            <UsersChart
+              data={(charts.revenueByDay ?? []).map(d => ({
+                date: d.date,
+                active_users: parseFloat(d.revenue) || 0,
+              }))}
+              label="Ingresos ($)"
+              color="#3b82f6"
+            />
           </div>
         </div>
       </div>
 
-      <div className="dashboard-grid" style={{ marginTop: "2rem" }}>
+      {/* ── Gráficos fila 2 ───────────────────────────────────── */}
+      <div className="dashboard-grid" style={{ marginTop: '1.25rem' }}>
         <div className="card">
           <div className="card-header">
-            <h3 className="card-title">Ventas por Categoría</h3>
-            <div
-              className="card-icon"
-              style={{ background: "#f3e8ff", color: "#8b5cf6" }}
-            >
-              🎯
-            </div>
+            <h3 className="card-title">Top 5 Productos</h3>
+            <div className="card-icon" style={{ background: 'var(--purple-bg)', color: 'var(--purple)' }}>🎯</div>
           </div>
           <div className="chart-container">
-            <ActivityChart data={stats.charts_data?.category_sales || []} />
+            <ActivityChart
+              data={(charts.topProducts ?? []).map(p => ({
+                category: p.name,
+                revenue:  parseFloat(p.total_revenue) || 0,
+              }))}
+            />
           </div>
         </div>
 
         <div className="card">
           <div className="card-header">
-            <h3 className="card-title">Adopciones por Tipo</h3>
-            <div
-              className="card-icon"
-              style={{ background: "#fef2f2", color: "#ef4444" }}
-            >
-              🐾
-            </div>
+            <h3 className="card-title">Eventos por Tipo</h3>
+            <div className="card-icon" style={{ background: 'var(--red-bg)', color: 'var(--red)' }}>📋</div>
           </div>
           <div className="chart-container">
-            <AdoptionsChart data={stats.charts_data?.adoption_types || []} />
+            <AdoptionsChart
+              data={(charts.eventsByType ?? []).map(e => ({
+                pet_type:       e.type,
+                adoption_count: parseInt(e.total, 10) || 0,
+              }))}
+            />
           </div>
         </div>
       </div>
