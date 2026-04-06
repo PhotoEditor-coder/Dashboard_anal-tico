@@ -1,128 +1,94 @@
 <?php
-/**
- * API Endpoint: Usuarios
- * GET /api/users - Lista todos los usuarios
- * GET /api/users?active=true - Solo usuarios activos
- * GET /api/users?role=admin - Filtrar por rol
- */
+// backend/api/users.php
+// GET /api/users.php           → lista de usuarios
+// GET /api/users.php?active=true
+// GET /api/users.php?role=admin
+// GET /api/users.php?limit=100
 
-require_once '../config/database.php';
-
-// CORS headers mejorados
-$origin = $_SERVER['HTTP_ORIGIN'] ?? '';
-$allowedOrigins = [
-    'http://localhost:3000',
-    'http://127.0.0.1:3000',
-    'http://localhost:8080',
-    'http://127.0.0.1:8080'
-];
-
-if (in_array($origin, $allowedOrigins)) {
-    header("Access-Control-Allow-Origin: $origin");
-} else {
-    header('Access-Control-Allow-Origin: http://localhost:3000');
-}
-
-header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With');
-header('Access-Control-Allow-Credentials: true');
-header('Access-Control-Max-Age: 86400');
-
-if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
-    http_response_code(200);
-    exit(0);
-}
+require_once __DIR__ . '/bootstrap.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
-    handleError('Método no permitido', 405);
+    respond('Método no permitido', 405);
 }
 
 try {
-    $database = new Database();
-    $db = $database->getConnection();
-    
-    if (!$db) {
-        handleError('Error de conexión a la base de datos', 500);
-    }
-    
-    // Parámetros de consulta
-    $active = isset($_GET['active']) ? $_GET['active'] : null;
-    $role = isset($_GET['role']) ? $_GET['role'] : null;
-    $limit = isset($_GET['limit']) ? (int)$_GET['limit'] : 50;
-    
-    // Construir consulta SQL
-    $sql = "SELECT 
-                id, 
-                name, 
-                email, 
-                role, 
-                created_at, 
-                last_login, 
-                is_active,
-                CASE 
-                    WHEN last_login > DATE_SUB(NOW(), INTERVAL 7 DAY) THEN 'recent'
-                    WHEN last_login > DATE_SUB(NOW(), INTERVAL 30 DAY) THEN 'active'
-                    ELSE 'inactive'
-                END as activity_status
-            FROM users";
-    
+    $active = $_GET['active'] ?? null;
+    $role   = $_GET['role']   ?? null;
+    $limit  = isset($_GET['limit']) ? max(1, min(500, (int) $_GET['limit'])) : 50;
+
+    // ─────────────────────────────────────────
+    // 1) Listado de usuarios
+    // ─────────────────────────────────────────
     $conditions = [];
-    $params = [];
-    
+    $params     = [];
+
     if ($active !== null) {
-        $conditions[] = "is_active = :active";
-        $params[':active'] = $active === 'true' ? 1 : 0;
+        $conditions[]       = 'is_active = :active';
+        $params[':active']  = $active === 'true' ? 1 : 0;
     }
-    
+
     if ($role) {
-        $conditions[] = "role = :role";
+        $conditions[]    = 'role = :role';
         $params[':role'] = $role;
     }
-    
-    if (!empty($conditions)) {
-        $sql .= " WHERE " . implode(' AND ', $conditions);
-    }
-    
-    $sql .= " ORDER BY created_at DESC LIMIT :limit";
-    $params[':limit'] = $limit;
-    
+
+    $whereSql = $conditions ? ' WHERE ' . implode(' AND ', $conditions) : '';
+
+    $sql = "
+        SELECT
+            id,
+            name,
+            email,
+            role,
+            is_active,
+            created_at,
+            last_login_at,
+            CASE
+                WHEN last_login_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)  THEN 'recent'
+                WHEN last_login_at >= DATE_SUB(NOW(), INTERVAL 30 DAY) THEN 'active'
+                ELSE 'inactive'
+            END AS activity_status
+        FROM users
+        {$whereSql}
+        ORDER BY created_at DESC
+        LIMIT :limit
+    ";
+
     $stmt = $db->prepare($sql);
-    
     foreach ($params as $key => $value) {
-        if ($key === ':limit') {
-            $stmt->bindValue($key, $value, PDO::PARAM_INT);
-        } else {
-            $stmt->bindValue($key, $value);
-        }
+        $stmt->bindValue($key, $value);
     }
-    
+    $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
     $stmt->execute();
     $users = $stmt->fetchAll();
-    
-    // Estadísticas adicionales
-    $stats_sql = "SELECT 
-                    COUNT(*) as total_users,
-                    COUNT(CASE WHEN is_active = 1 THEN 1 END) as active_users,
-                    COUNT(CASE WHEN last_login > DATE_SUB(NOW(), INTERVAL 7 DAY) THEN 1 END) as recent_users,
-                    COUNT(CASE WHEN role = 'admin' THEN 1 END) as admin_users
-                  FROM users";
-    
-    $stats_stmt = $db->prepare($stats_sql);
-    $stats_stmt->execute();
-    $stats = $stats_stmt->fetch();
-    
-    $response = [
+
+    // ─────────────────────────────────────────
+    // 2) Estadísticas de usuarios
+    // ─────────────────────────────────────────
+    $statsStmt = $db->query("
+        SELECT
+            COUNT(*)                                                                 AS total_users,
+            COUNT(CASE WHEN is_active = 1 THEN 1 END)                               AS active_users,
+            COUNT(CASE WHEN last_login_at >= DATE_SUB(NOW(), INTERVAL  7 DAY) THEN 1 END) AS recent_users,
+            COUNT(CASE WHEN last_login_at >= DATE_SUB(NOW(), INTERVAL 30 DAY) THEN 1 END) AS users_last_30d,
+            COUNT(CASE WHEN role = 'admin' THEN 1 END)                              AS admin_users,
+            COUNT(CASE WHEN created_at    >= DATE_SUB(NOW(), INTERVAL 30 DAY) THEN 1 END) AS new_last_30d
+        FROM users
+    ");
+    $statistics = $statsStmt->fetch();
+
+    // ─────────────────────────────────────────
+    // 3) Respuesta unificada
+    // ─────────────────────────────────────────
+    respond([
         'users' => $users,
         'pagination' => [
             'limit' => $limit,
-            'total' => count($users)
+            'total' => count($users),
         ],
-        'statistics' => $stats
-    ];
-    
-    sendResponse($response);
-    
-} catch (Exception $e) {
-    handleError('Error interno del servidor: ' . $e->getMessage(), 500);
+        'statistics' => $statistics,
+    ]);
+
+} catch (Throwable $e) {
+    respond('Error interno del servidor: ' . $e->getMessage(), 500);
 }
-?>
