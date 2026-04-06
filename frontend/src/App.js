@@ -1,45 +1,48 @@
-import React, { useState, useEffect } from 'react';
+// frontend/src/App.js  ← ÚNICO punto de entrada (elimina App.jsx)
+import React, { useState } from 'react';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import './App.css';
-import Dashboard from './components/Dashboard';
-import Header from './components/Header';
+import Header  from './components/Header';
 import Sidebar from './components/Sidebar';
-import LoadingSpinner from './components/LoadingSpinner';
+
+// Páginas
+import DashboardPage  from './pages/DashboardPage';
+import UsersPage      from './pages/UsersPage';
+import SalesPage      from './pages/SalesPage';
+import LogsPage       from './pages/LogsPage';
+import AdoptionsPage  from './pages/AdoptionsPage';
 
 function App() {
-  const [loading, setLoading] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  useEffect(() => {
-    // Simular carga inicial
-    const timer = setTimeout(() => {
-      setLoading(false);
-    }, 1500);
-
-    return () => clearTimeout(timer);
-  }, []);
-
-  if (loading) {
-    return <LoadingSpinner />;
-  }
-
   return (
-    <div className="App">
-      <Header 
-        onMenuClick={() => setSidebarOpen(!sidebarOpen)}
-        sidebarOpen={sidebarOpen}
-      />
-      
-      <div className="app-container">
-        <Sidebar 
-          isOpen={sidebarOpen}
-          onClose={() => setSidebarOpen(false)}
+    <BrowserRouter>
+      <div className="App">
+        <Header
+          onMenuClick={() => setSidebarOpen(prev => !prev)}
+          sidebarOpen={sidebarOpen}
         />
-        
-        <main className={`main-content ${sidebarOpen ? 'sidebar-open' : ''}`}>
-          <Dashboard />
-        </main>
+
+        <div className="app-container">
+          <Sidebar
+            isOpen={sidebarOpen}
+            onClose={() => setSidebarOpen(false)}
+          />
+
+          <main className={`main-content ${sidebarOpen ? 'sidebar-open' : ''}`}>
+            <Routes>
+              <Route path="/"           element={<DashboardPage />} />
+              <Route path="/usuarios"   element={<UsersPage />} />
+              <Route path="/ventas"     element={<SalesPage />} />
+              <Route path="/logs"       element={<LogsPage />} />
+              <Route path="/adopciones" element={<AdoptionsPage />} />
+              {/* Redirigir cualquier ruta desconocida al dashboard */}
+              <Route path="*"           element={<Navigate to="/" replace />} />
+            </Routes>
+          </main>
+        </div>
       </div>
-    </div>
+    </BrowserRouter>
   );
 }
 
